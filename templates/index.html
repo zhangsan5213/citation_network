@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <!-- Required meta tags -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css">
+  <!-- Optional JavaScript -->
+  <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+  <script src="../static/lib/vis-network.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.4.1.js" integrity="sha256-WpOohJOqMqqyKL9FccASB9O0KwACQJpFTUBLTYOVvVU="
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+    integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+    crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"
+    integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
+    crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.nicescroll/3.6.8-fix/jquery.nicescroll.min.js"></script>
+  <link rel="stylesheet" href="../static/css/index.css">
+  <!-- <script src="../static/js/index.js"></script> -->
+  <title>cross-ref graph test</title>
+  <script type="text/javascript" src="//code.jquery.com/jquery-1.4.2.min.js"></script>
+  <script type="text/javascript" src="//cdn.socket.io/4.4.1/socket.io.min.js"></script>
+  <script type="text/javascript" charset="utf-8">
+    var socket;
+    var nodes = [];
+    var edges = [];
+    function updateNodeEdgeInfo(data) {
+      nodes = data.nodes
+      edges = data.edges
+      console.log('update')
+      console.log(nodes)
+      console.log(edges)
+    };
+    function colorInterpret(color) {
+      if (color == 'k') {
+        return 'black'
+      } else if (color == 'r') {
+        return 'red'
+      } else if (color == 'g') {
+        return 'green'
+      } else if (color == 'b') {
+        return 'red'
+      }
+    }
+    function networkOnClick(params) {
+      console.log('networkOnClick function called')
+      let index;
+      if (params.nodes.length > 0) {
+        index = params.nodes[0];
+        nodes.map((node) => {
+          if (node.index == index) {
+            console.log("node clicked for query", node.doi);
+            fetch("/node_clicked", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                clicked_doi: node.doi,
+                history_edges: edges,
+                history_nodes: nodes,
+              }),
+            })
+              .then((response) => response.json())
+              .then((data) => {
+                updateNodeEdgeInfo(data);
+                console.log('node query result updated.')
+                initNetwork(nodes, edges);
+                console.log('node query result graphed.')
+              })
+              .catch((error) => {
+                console.error('Error fetching node query result:', error);
+              });
+          }
+        });
+      }
+    }
+    function initNetwork(nodesdata, edgesdata) {
+      const years = Array.from(new Set(nodesdata.map(article => article.pub_date.substr(0, 4)).sort()));
+      const newNodes = nodesdata.map((node) => ({
+        doi: node.id,
+        id: node.index,
+        title: node.title,
+        date: node.pub_date,
+        link: node.doi,
+        level: years.indexOf(node.pub_date.substr(0, 4))
+      }))
+      const newEdges = edgesdata.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        dashes: edge.type == 'dashed',
+        color: colorInterpret(edge.color),
+      }))
+      let container = document.getElementById('mydataviz');
+      let data = {
+        nodes: newNodes,
+        edges: newEdges
+      };
+      let options = {
+        interaction: {
+          dragNodes: false
+        },
+        nodes: {
+          size: 300,
+        },
+        layout: {
+          hierarchical: {
+            direction: 'RL',
+            levelSeparation: 210
+          }
+        },
+        physics: {
+          enabled: true,
+          hierarchicalRepulsion: {
+            nodeDistance: 180
+          },
+        }
+      };
+      var network = new vis.Network(container, data, options);
+      network.on('click', networkOnClick)
+    }
+    $(document).ready(function () {
+      function queryDOI(rootDOI) {
+        fetch('/root_doi_query', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ root_doi: rootDOI })
+        })
+          .then(response => response.json())
+          .then(data => {
+            console.log('doi query result received');
+            // update the nodes and edges info
+            updateNodeEdgeInfo(data);
+            // add graph
+            initNetwork(nodes, edges);
+          })
+          .catch(error => {
+            console.error(error);
+          });
+      };
+      $('#inputbox').keypress(function (e) {
+        var code = e.keyCode || e.which;
+        if (code == 13) {
+          // empty the input box, call ask() with its content
+          doi_input = $('#inputbox').val();
+          $('#inputbox').val('');
+          console.log(doi_input)
+          // send doi to backend
+          queryDOI(doi_input);
+          console.log('root doi queried for', doi_input)
+        };
+      });
+    });
+  </script>
+  <style>
+    .container {
+      height: 800px;
+    }
+
+    #mydataviz {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="content container">
+    <div>
+      <textarea id="inputbox"></textarea>
+    </div>
+    <div class="container">
+      <div id="mydataviz"></div>
+    </div>
+  </div>
+</body>
+
+</html>
